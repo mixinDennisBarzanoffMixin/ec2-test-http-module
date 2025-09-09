@@ -15,13 +15,11 @@ console.log('SERVER_ID:', process.env.SERVER_ID);
 console.log('PORT:', process.env.PORT);
 
 // PostgreSQL connection pool (pool = δεξαμενή συνδέσεων)
-console.log('🗄️ Creating PostgreSQL connection pool...'); // Δημιουργούμε pool συνδέσεων
+if (!process.env.DB_URL) {
+  throw new Error('DB_URL is not set');
+}
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'testdb',
-  password: process.env.DB_PASSWORD || 'password',
-  port: process.env.DB_PORT || 5432,
+  connectionString: process.env.DB_URL
 });
 
 // Middleware
