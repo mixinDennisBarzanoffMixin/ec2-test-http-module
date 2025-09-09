@@ -5,15 +5,17 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-console.log(process.env.DB_USER);
-console.log(process.env.DB_HOST);
-console.log(process.env.DB_NAME);
-console.log(process.env.DB_PASSWORD);
-console.log(process.env.DB_PORT);
-console.log(process.env.SERVER_ID);
-console.log(process.env.PORT);
+console.log('🔧 Environment variables loaded:'); // Φορτώθηκαν οι μεταβλητές περιβάλλοντος
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_HOST:', process.env.DB_HOST);
+console.log('DB_NAME:', process.env.DB_NAME);
+console.log('DB_PASSWORD:', process.env.DB_PASSWORD ? '***hidden***' : 'not set'); // κρυμμένο για ασφάλεια
+console.log('DB_PORT:', process.env.DB_PORT);
+console.log('SERVER_ID:', process.env.SERVER_ID);
+console.log('PORT:', process.env.PORT);
 
 // PostgreSQL connection pool (pool = δεξαμενή συνδέσεων)
+console.log('🗄️ Creating PostgreSQL connection pool...'); // Δημιουργούμε pool συνδέσεων
 const pool = new Pool({
   user: process.env.DB_USER || 'postgres',
   host: process.env.DB_HOST || 'localhost',
@@ -23,10 +25,12 @@ const pool = new Pool({
 });
 
 // Middleware
+console.log('⚙️ Setting up middleware...'); // Ρυθμίζουμε middleware
 app.use(express.json());
 
 // Health check route (για το load balancer)
 app.get('/health', (req, res) => {
+  console.log('❤️ Health check requested'); // Ζητήθηκε έλεγχος υγείας
   res.json({ 
     status: 'OK', 
     server: process.env.SERVER_ID || 'server-1',
@@ -36,9 +40,15 @@ app.get('/health', (req, res) => {
 
 // Root route με database query
 app.get('/', async (req, res) => {
+  console.log('🏠 Root route accessed'); // Προσπελάστηκε η κύρια διαδρομή
   try {
+    console.log('🔌 Connecting to database...'); // Συνδεόμαστε στη βάση δεδομένων
     const client = await pool.connect();
+    console.log('✅ Database connection successful'); // Επιτυχής σύνδεση
+    
     const result = await client.query('SELECT NOW() as current_time, version() as db_version');
+    console.log('📊 Database query executed successfully'); // Το query εκτελέστηκε επιτυχώς
+    
     const serverInfo = {
       message: 'Hello from EC2 Load Balancer Test!',
       server_id: process.env.SERVER_ID || 'server-1',
@@ -47,9 +57,10 @@ app.get('/', async (req, res) => {
       request_count: await getRequestCount(client)
     };
     client.release();
+    console.log('🔓 Database connection released'); // Απελευθερώθηκε η σύνδεση
     res.json(serverInfo);
   } catch (err) {
-    console.error('Database error:', err);
+    console.error('❌ Database error:', err); // Σφάλμα βάσης δεδομένων
     res.status(500).json({ 
       error: 'Database connection failed',
       server_id: process.env.SERVER_ID || 'server-1'
@@ -59,25 +70,34 @@ app.get('/', async (req, res) => {
 
 // Route για να προσθέτουμε requests (για testing)
 app.post('/requests', async (req, res) => {
+  console.log('📝 POST /requests - Adding new request'); // Προσθέτουμε νέο αίτημα
+  console.log('Request body:', req.body); // Περιεχόμενο αιτήματος
   try {
     const client = await pool.connect();
+    console.log('🔌 Connected to database for insert'); // Συνδεθήκαμε για εισαγωγή
+    
     const result = await client.query(
       'INSERT INTO requests (server_id, timestamp, data) VALUES ($1, NOW(), $2) RETURNING *',
       [process.env.SERVER_ID || 'server-1', JSON.stringify(req.body)]
     );
+    console.log('✅ Request inserted successfully:', result.rows[0].id); // Επιτυχής εισαγωγή
     client.release();
     res.json({ success: true, request: result.rows[0] });
   } catch (err) {
-    console.error('Insert error:', err);
+    console.error('❌ Insert error:', err); // Σφάλμα εισαγωγής
     res.status(500).json({ error: 'Failed to insert request' });
   }
 });
 
 // Route για να βλέπουμε όλα τα requests
 app.get('/requests', async (req, res) => {
+  console.log('📋 GET /requests - Fetching all requests'); // Ανακτούμε όλα τα αιτήματα
   try {
     const client = await pool.connect();
+    console.log('🔌 Connected to database for select'); // Συνδεθήκαμε για επιλογή
+    
     const result = await client.query('SELECT * FROM requests ORDER BY timestamp DESC LIMIT 50');
+    console.log(`📊 Found ${result.rows.length} requests`); // Βρέθηκαν αιτήματα
     client.release();
     res.json({ 
       requests: result.rows,
@@ -85,25 +105,32 @@ app.get('/requests', async (req, res) => {
       server_id: process.env.SERVER_ID || 'server-1'
     });
   } catch (err) {
-    console.error('Select error:', err);
+    console.error('❌ Select error:', err); // Σφάλμα επιλογής
     res.status(500).json({ error: 'Failed to fetch requests' });
   }
 });
 
 // Helper function για να μετράμε requests
 async function getRequestCount(client) {
+  console.log('🔢 Counting total requests...'); // Μετράμε συνολικά αιτήματα
   try {
     const result = await client.query('SELECT COUNT(*) FROM requests');
-    return parseInt(result.rows[0].count);
+    const count = parseInt(result.rows[0].count);
+    console.log(`📊 Total request count: ${count}`); // Συνολικός αριθμός αιτημάτων
+    return count;
   } catch (err) {
+    console.log('⚠️ Table does not exist yet, returning 0'); // Ο πίνακας δεν υπάρχει ακόμα
     return 0; // αν δεν υπάρχει το table ακόμα
   }
 }
 
 // Initialize database table στο startup
 async function initDatabase() {
+  console.log('🗄️ Initializing database table...'); // Αρχικοποιούμε τον πίνακα βάσης
   try {
     const client = await pool.connect();
+    console.log('🔌 Connected to database for initialization'); // Συνδεθήκαμε για αρχικοποίηση
+    
     await client.query(`
       CREATE TABLE IF NOT EXISTS requests (
         id SERIAL PRIMARY KEY,
@@ -112,23 +139,28 @@ async function initDatabase() {
         data JSONB
       )
     `);
-    console.log('Database table initialized');
+    console.log('✅ Database table initialized successfully'); // Επιτυχής αρχικοποίηση πίνακα
     client.release();
   } catch (err) {
-    console.error('Database initialization error:', err);
+    console.error('❌ Database initialization error:', err); // Σφάλμα αρχικοποίησης
   }
 }
 
 // Start server
 app.listen(port, async () => {
-  console.log(`🚀 Server running on port ${port}`);
+  console.log(`🚀 Server running on port ${port}`); // Ο server τρέχει στη θύρα
   console.log(`📊 Server ID: ${process.env.SERVER_ID || 'server-1'}`);
+  console.log('🔄 Starting database initialization...'); // Ξεκινάμε αρχικοποίηση βάσης
   await initDatabase();
+  console.log('🎉 Server startup complete!'); // Ολοκληρώθηκε η εκκίνηση
 });
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
-  console.log('Shutting down gracefully...');
+  console.log('🛑 Received shutdown signal...'); // Λάβαμε σήμα τερματισμού
+  console.log('🔄 Shutting down gracefully...'); // Τερματίζουμε ομαλά
   await pool.end();
+  console.log('🔌 Database pool closed'); // Κλείσαμε το pool συνδέσεων
+  console.log('👋 Goodbye!'); // Αντίο!
   process.exit(0);
 });
